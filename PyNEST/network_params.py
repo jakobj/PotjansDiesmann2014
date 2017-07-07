@@ -185,9 +185,13 @@ net_dict = {
     # Rate of the Poissonian spike generator (in Hz).
     'bg_rate': 8.,
     # Turn Poisson input on or off (True or False).
-    'poisson_input': True,
+    'poisson_input': False,
     # Delay of the Poisson generator (in ms).
     'poisson_delay': 1.5,
+    # Use pool of Poisson sources instead of individual sources
+    'poisson_pool_input': False,
+    # Number of sources in Poisson pool
+    'poisson_pool_size': 1. / 0.1 * np.array([1600, 1500, 2100, 1900, 2000, 1900, 2900, 2100]),
     # Mean delay of excitatory connections (in ms).
     'mean_delay_exc': 1.5,
     # Mean delay of inhibitory connections (in ms).

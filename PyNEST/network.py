@@ -142,23 +142,25 @@ class Network:
         self.synapses_scaled = self.synapses * self.K_scaling
         self.nr_neurons = self.N_full * self.N_scaling
         self.K_ext = self.net_dict['K_ext'] * self.K_scaling
+        self.poisson_pool_size = self.net_dict['poisson_pool_size'] * self.K_scaling
         self.w_from_PSP = get_weight(self.net_dict['PSP_e'], self.net_dict)
         self.weight_mat = get_weight(
             self.net_dict['PSP_mean_matrix'], self.net_dict
             )
         self.weight_mat_std = self.net_dict['PSP_std_matrix']
         self.w_ext = self.w_from_PSP
-        if self.net_dict['poisson_input']:
-            self.DC_amp_e = np.zeros(len(self.net_dict['populations']))
-        else:
-            if nest.Rank() == 0:
-                print(
-                    '''
-                    no poisson input provided
-                    calculating dc input to compensate
-                    '''
-                    )
-            self.DC_amp_e = compute_DC(self.net_dict, self.w_ext)
+        self.DC_amp_e = np.zeros(len(self.net_dict['populations']))
+        # if self.net_dict['poisson_input']:
+        #     self.DC_amp_e = np.zeros(len(self.net_dict['populations']))
+        # else:
+        #     if nest.Rank() == 0:
+        #         print(
+        #             '''
+        #             no poisson input provided
+        #             calculating dc input to compensate
+        #             '''
+        #             )
+        #     self.DC_amp_e = compute_DC(self.net_dict, self.w_ext)
 
         if nest.Rank() == 0:
             print(
@@ -303,15 +305,24 @@ class Network:
         and the parameters needed are passed to the Poissonian generator.
 
         """
-        if self.net_dict['poisson_input']:
-            if nest.Rank() == 0:
-                print('Poisson background input created')
-            rate_ext = self.net_dict['bg_rate'] * self.K_ext
-            self.poisson = []
-            for i, target_pop in enumerate(self.pops):
-                poisson = nest.Create('poisson_generator')
-                nest.SetStatus(poisson, {'rate': rate_ext[i]})
-                self.poisson.append(poisson)
+        if nest.Rank() == 0:
+            print('Poisson background input created')
+        rate_ext = self.net_dict['bg_rate'] * self.K_ext
+        self.poisson = []
+        for i, target_pop in enumerate(self.pops):
+            poisson = nest.Create('poisson_generator')
+            nest.SetStatus(poisson, {'rate': rate_ext[i]})
+            self.poisson.append(poisson)
+
+    def create_poisson_pool(self):
+        if nest.Rank() == 0:
+            print('Poisson background pool created')
+        self.poisson = []
+        for i, target_pop in enumerate(self.pops):
+            poisson = nest.Create('poisson_generator', 1, {'rate': self.net_dict['bg_rate']})
+            parrots = nest.Create('parrot_neuron', int(self.poisson_pool_size[i]))  # use parrots to emulate multiple Poisson sources
+            nest.Connect(poisson, parrots, {'rule': 'all_to_all'}, {'weight': 1., 'delay': 1.})
+            self.poisson.append(parrots)
 
     def create_dc_generator(self):
         """ Creates a DC input generator.
@@ -398,6 +409,27 @@ class Network:
                 syn_spec=syn_dict_poisson
                 )
 
+    def connect_poisson_pool(self):
+        if nest.Rank() == 0:
+            print('Poisson pool background is connected')
+        for i, target_pop in enumerate(self.pops):
+            conn_dict_poisson = {
+                'rule': 'fixed_indegree',
+                'indegree': int(self.K_ext[i]),
+                'multapses': False,
+            }
+            syn_dict_poisson = {
+                'model': 'static_synapse',
+                'weight': self.w_ext,
+                'delay': self.net_dict['poisson_delay'] - 1.,
+                }
+            nest.Connect(
+                self.poisson[i], target_pop,
+                conn_spec=conn_dict_poisson,
+                syn_spec=syn_dict_poisson
+                )
+
+
     def connect_thalamus(self):
         """ Connects the thalamic population to the microcircuit."""
         if nest.Rank() == 0:
@@ -468,11 +500,22 @@ class Network:
         self.create_populations()
         self.create_devices()
         self.create_thalamic_input()
-        self.create_poisson()
+
+        if self.net_dict['poisson_input']:
+            assert(not self.net_dict['poisson_pool_input'])
+            self.create_poisson()
+        elif self.net_dict['poisson_pool_input']:
+            assert(not self.net_dict['poisson_input'])
+            self.create_poisson_pool()
+
         self.create_dc_generator()
         self.create_connections()
+
         if self.net_dict['poisson_input']:
             self.connect_poisson()
+        elif self.net_dict['poisson_pool_input']:
+            self.connect_poisson_pool()
+
         if self.stim_dict['thalamic_input']:
             self.connect_thalamus()
         if self.stim_dict['dc_input']:

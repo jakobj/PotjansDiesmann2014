@@ -39,7 +39,7 @@ sim_dict = {
     # Masterseed for NEST and NumPy.
     'master_seed': 55,
     # Number of threads per MPI process.
-    'local_num_threads': 1,
+    'local_num_threads': 2,
     # Recording interval of the membrane potential (in ms).
     'rec_V_int': 1.0,
     # If True, data will be overwritten,
@@ -47,5 +47,5 @@ sim_dict = {
     'overwrite_files': True,
     # Print the time progress, this should only be used when the simulation
     # is run on a local machine.
-    'print_time': True
+    'print_time': False
     }

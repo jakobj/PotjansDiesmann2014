@@ -229,13 +229,14 @@ def adj_w_ext_to_K(K_full, K_scaling, w, w_from_PSP, DC, net_dict, stim_dict):
     I_ext = np.zeros(len(net_dict['populations']))
     x1_all = w * K_full * full_mean_rates
     x1_sum = np.sum(x1_all, axis=1)
-    if net_dict['poisson_input']:
+    if net_dict['poisson_input'] or net_dict['poisson_pool_input']:
         x1_ext = w_mean * K_ext * bg_rate
         w_ext_new = w_mean / np.sqrt(K_scaling)
         I_ext = 0.001 * tau_syn_E * (
             (1. - np.sqrt(K_scaling)) * x1_sum + (
                 1. - np.sqrt(K_scaling)) * x1_ext) + DC
     else:
+        assert(False)
         w_ext_new = w_from_PSP / np.sqrt(K_scaling)
         I_ext = 0.001 * tau_syn_E * (
             (1. - np.sqrt(K_scaling)) * x1_sum) + DC
