@@ -189,9 +189,21 @@ net_dict = {
     # Delay of the Poisson generator (in ms).
     'poisson_delay': 1.5,
     # Use pool of Poisson sources instead of individual sources
-    'poisson_pool_input': False,
+    'poisson_pool_input': True,
     # Number of sources in Poisson pool
-    'poisson_pool_size': 1. / 0.1 * np.array([1600, 1500, 2100, 1900, 2000, 1900, 2900, 2100]),
+    'background_pool_size': 1. / 0.8 * np.array([1600, 1500, 2100, 1900, 2000, 1900, 2900, 2100]),
+    # Use recurrent network as background input
+    'network_input': False,
+    # Firing rate of neurons in background network (needs to be determined manually)
+    'network_rate': 3.83,
+    # Paramters for connectivity of background pool/network
+    'input_conn_params': {
+        'g': 6.,
+        'JE': 0.0635,
+        # 'JE': 0.15 * 10.,
+        'gamma': 0.2,
+        'delay': 1.5,
+    },
     # Mean delay of excitatory connections (in ms).
     'mean_delay_exc': 1.5,
     # Mean delay of inhibitory connections (in ms).

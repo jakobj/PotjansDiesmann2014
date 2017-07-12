@@ -44,6 +44,9 @@ from helpers import fire_rate
 from helpers import boxplot
 from helpers import compute_DC
 
+import poisson_pool_input
+import network_input
+
 
 class Network:
     """ Handles the setup of the network parameters and
@@ -142,14 +145,17 @@ class Network:
         self.synapses_scaled = self.synapses * self.K_scaling
         self.nr_neurons = self.N_full * self.N_scaling
         self.K_ext = self.net_dict['K_ext'] * self.K_scaling
-        self.poisson_pool_size = self.net_dict['poisson_pool_size'] * self.K_scaling
+        self.background_pool_size = self.net_dict['background_pool_size'] * self.K_scaling
         self.w_from_PSP = get_weight(self.net_dict['PSP_e'], self.net_dict)
         self.weight_mat = get_weight(
             self.net_dict['PSP_mean_matrix'], self.net_dict
             )
         self.weight_mat_std = self.net_dict['PSP_std_matrix']
         self.w_ext = self.w_from_PSP
-        self.DC_amp_e = np.zeros(len(self.net_dict['populations']))
+        # self.w_input = get_weight(self.net_dict['input_conn_params']['JE'], self.net_dict)
+        # self.w_input = self.net_dict['input_conn_params']['JE']
+        self.w_input = self.net_dict['input_conn_params']['JE'] * self.net_dict['neuron_params']['tau_m'] / self.net_dict['neuron_params']['C_m'] * 1e3 * 10.
+        print('w_input', self.w_input)
         # if self.net_dict['poisson_input']:
         #     self.DC_amp_e = np.zeros(len(self.net_dict['populations']))
         # else:
@@ -160,7 +166,20 @@ class Network:
         #             calculating dc input to compensate
         #             '''
         #             )
-        #     self.DC_amp_e = compute_DC(self.net_dict, self.w_ext)
+        self.DC_amp_e = compute_DC(self.net_dict, self.w_ext)  # always use external input
+
+        if self.net_dict['poisson_input'] or self.net_dict['poisson_pool_input'] or self.net_dict['network_input']:
+            KE_ext = self.K_ext * self.net_dict['input_conn_params']['gamma']
+            KI_ext = self.K_ext * (1. - self.net_dict['input_conn_params']['gamma'])
+            # if self.net_dict['network_input']:
+            offset = KE_ext * self.w_input * self.net_dict['network_rate'] * self.net_dict['neuron_params']['tau_syn_ex'] + \
+                     -1. * KI_ext * self.net_dict['input_conn_params']['g'] * self.w_input * self.net_dict['network_rate'] * self.net_dict['neuron_params']['tau_syn_in']
+            # else:
+            #     offset = KE_ext * JE_ext * self.net_dict['bg_rate'] * self.net_dict['neuron_params']['tau_syn_ex'] + \
+            #              -1. * KI_ext * JI_ext * self.net_dict['bg_rate'] * self.net_dict['neuron_params']['tau_syn_in']
+            # print(self.DC_amp_e, offset * 1e-3)
+            # exit()
+            self.DC_amp_e -= (offset * 1e-3)
 
         if nest.Rank() == 0:
             print(
@@ -307,22 +326,15 @@ class Network:
         """
         if nest.Rank() == 0:
             print('Poisson background input created')
-        rate_ext = self.net_dict['bg_rate'] * self.K_ext
+        rate_ext = self.net_dict['network_rate'] * self.K_ext
         self.poisson = []
         for i, target_pop in enumerate(self.pops):
-            poisson = nest.Create('poisson_generator')
-            nest.SetStatus(poisson, {'rate': rate_ext[i]})
+            poisson = nest.Create('poisson_generator')  # exc input
+            nest.SetStatus(poisson, {'rate': self.net_dict['input_conn_params']['gamma'] * rate_ext[i]})
             self.poisson.append(poisson)
-
-    def create_poisson_pool(self):
-        if nest.Rank() == 0:
-            print('Poisson background pool created')
-        self.poisson = []
-        for i, target_pop in enumerate(self.pops):
-            poisson = nest.Create('poisson_generator', 1, {'rate': self.net_dict['bg_rate']})
-            parrots = nest.Create('parrot_neuron', int(self.poisson_pool_size[i]))  # use parrots to emulate multiple Poisson sources
-            nest.Connect(poisson, parrots, {'rule': 'all_to_all'}, {'weight': 1., 'delay': 1.})
-            self.poisson.append(parrots)
+            poisson = nest.Create('poisson_generator')  # inh input
+            nest.SetStatus(poisson, {'rate': (1. - self.net_dict['input_conn_params']['gamma']) * rate_ext[i]})
+            self.poisson.append(poisson)
 
     def create_dc_generator(self):
         """ Creates a DC input generator.
@@ -400,35 +412,20 @@ class Network:
             conn_dict_poisson = {'rule': 'all_to_all'}
             syn_dict_poisson = {
                 'model': 'static_synapse',
-                'weight': self.w_ext,
+                'weight': self.w_input,
                 'delay': self.net_dict['poisson_delay']
                 }
             nest.Connect(
-                self.poisson[i], target_pop,
+                self.poisson[2 * i], target_pop,
                 conn_spec=conn_dict_poisson,
                 syn_spec=syn_dict_poisson
                 )
-
-    def connect_poisson_pool(self):
-        if nest.Rank() == 0:
-            print('Poisson pool background is connected')
-        for i, target_pop in enumerate(self.pops):
-            conn_dict_poisson = {
-                'rule': 'fixed_indegree',
-                'indegree': int(self.K_ext[i]),
-                'multapses': False,
-            }
-            syn_dict_poisson = {
-                'model': 'static_synapse',
-                'weight': self.w_ext,
-                'delay': self.net_dict['poisson_delay'] - 1.,
-                }
+            syn_dict_poisson['weight'] = -1. * self.net_dict['input_conn_params']['g'] * self.w_input
             nest.Connect(
-                self.poisson[i], target_pop,
+                self.poisson[2 * i + 1], target_pop,
                 conn_spec=conn_dict_poisson,
                 syn_spec=syn_dict_poisson
                 )
-
 
     def connect_thalamus(self):
         """ Connects the thalamic population to the microcircuit."""
@@ -502,11 +499,16 @@ class Network:
         self.create_thalamic_input()
 
         if self.net_dict['poisson_input']:
-            assert(not self.net_dict['poisson_pool_input'])
+            assert(not self.net_dict['poisson_pool_input'] and not self.net_dict['network_input'])
             self.create_poisson()
         elif self.net_dict['poisson_pool_input']:
-            assert(not self.net_dict['poisson_input'])
-            self.create_poisson_pool()
+            assert(not self.net_dict['poisson_input'] and not self.net_dict['network_input'])
+            self.poisson = poisson_pool_input.create_poisson_pool(self.net_dict, self.background_pool_size)
+        elif self.net_dict['network_input']:
+            assert(not self.net_dict['poisson_input'] and not self.net_dict['poisson_pool_input'])
+            self.poisson = network_input.create_network_input(self.net_dict, self.background_pool_size, self.K_ext, self.w_input)
+        # else:
+        #     assert(False), 'No input selected.'
 
         self.create_dc_generator()
         self.create_connections()
@@ -514,7 +516,9 @@ class Network:
         if self.net_dict['poisson_input']:
             self.connect_poisson()
         elif self.net_dict['poisson_pool_input']:
-            self.connect_poisson_pool()
+            poisson_pool_input.connect_poisson_pool(self.net_dict, self.pops, self.poisson, self.K_ext, self.w_input)
+        elif self.net_dict['network_input']:
+            network_input.connect_network_input(self.net_dict, self.pops, self.poisson, self.K_ext, self.w_input)
 
         if self.stim_dict['thalamic_input']:
             self.connect_thalamus()
@@ -525,6 +529,11 @@ class Network:
     def simulate(self):
         """ Simulates the microcircuit."""
         nest.Simulate(self.sim_dict['t_sim'])
+
+        if self.net_dict['poisson_pool_input'] or self.net_dict['network_input']:
+            print('Background pool rate: {r}'.format(r=len(nest.GetStatus(self.net_dict['sd_noise'], 'events')[0]['times']) / self.sim_dict['t_sim'] * 1e3 / np.max(self.background_pool_size)))
+
+        # exit()
 
     def evaluate(self, raster_plot_time_idx, fire_rate_time_idx):
         """ Displays output of the simulation.
