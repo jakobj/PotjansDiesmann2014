@@ -31,13 +31,13 @@ Hendrik Rothe, Hannah Bos, Sacha van Albada; May 2016
 import os
 sim_dict = {
     # Simulation time (in ms).
-    't_sim': 1000.0,
+    't_sim': 1000.,
     # Resolution of the simulation (in ms).
     'sim_resolution': 0.1,
     # Path to save the output data.
-    'data_path': os.path.join(os.getcwd(), 'data/'),
+    'data_path': os.path.join(os.getcwd(), 'data_{stim}_{seed}_{conn}/'),
     # Masterseed for NEST and NumPy.
-    'master_seed': 55,
+    # 'master_seed': 57,
     # Number of threads per MPI process.
     'local_num_threads': 2,
     # Recording interval of the membrane potential (in ms).

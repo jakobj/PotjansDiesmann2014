@@ -69,19 +69,34 @@ class Network:
         (see: stimulus_params.py)
 
     """
-    def __init__(self, sim_dict, net_dict, stim_dict=None):
+    def __init__(self, sim_dict, net_dict, background_connectivity, seed, stim_dict=None):
         self.sim_dict = sim_dict
+        self.sim_dict['master_seed'] = seed
+
         self.net_dict = net_dict
+        self.net_dict['background_pool_size'] = 1. / background_connectivity * self.net_dict['K_ext']
+
         if stim_dict is not None:
             self.stim_dict = stim_dict
         else:
             self.stim_dict = None
-        self.data_path = sim_dict['data_path']
+
+        if self.net_dict['poisson_input']:
+            stim = 'ind'
+        elif self.net_dict['poisson_pool_input']:
+            stim = 'pool'
+        elif self.net_dict['network_input']:
+            stim = 'network'
+        else:
+            raise NotImplementedError('Unknown stim.')
+
+        self.data_path = sim_dict['data_path'].format(stim=stim, seed=self.sim_dict['master_seed'], conn=background_connectivity)
+
         if nest.Rank() == 0:
-            if os.path.isdir(self.sim_dict['data_path']):
+            if os.path.isdir(self.data_path):
                 print('data directory already exists')
             else:
-                os.mkdir(self.sim_dict['data_path'])
+                os.mkdir(self.data_path)
                 print('data directory created')
             print('Data will be written to %s' % self.data_path)
 
@@ -154,7 +169,7 @@ class Network:
         self.w_ext = self.w_from_PSP
         # self.w_input = get_weight(self.net_dict['input_conn_params']['JE'], self.net_dict)
         # self.w_input = self.net_dict['input_conn_params']['JE']
-        self.w_input = self.net_dict['input_conn_params']['JE'] * self.net_dict['neuron_params']['tau_m'] / self.net_dict['neuron_params']['C_m'] * 1e3 * 10.
+        self.w_input = self.net_dict['input_conn_params']['JE'] * self.net_dict['neuron_params']['tau_syn_ex'] / self.net_dict['neuron_params']['C_m'] * 1e6
         print('w_input', self.w_input)
         # if self.net_dict['poisson_input']:
         #     self.DC_amp_e = np.zeros(len(self.net_dict['populations']))
@@ -256,7 +271,7 @@ class Network:
                     'withtime': True,
                     'to_memory': False,
                     'to_file': True,
-                    'label': os.path.join(self.data_path, 'spike_detector')
+                    'label': os.path.join(self.data_path, 'spike_detector_{pop}'.format(pop=self.net_dict['populations'][i]))
                     }
                 dummy = nest.Create('spike_detector', params=recdict)
                 self.spike_detector.append(dummy)
@@ -503,10 +518,10 @@ class Network:
             self.create_poisson()
         elif self.net_dict['poisson_pool_input']:
             assert(not self.net_dict['poisson_input'] and not self.net_dict['network_input'])
-            self.poisson = poisson_pool_input.create_poisson_pool(self.net_dict, self.background_pool_size)
+            self.poisson = poisson_pool_input.create_poisson_pool(self.net_dict, self.background_pool_size, self.data_path)
         elif self.net_dict['network_input']:
             assert(not self.net_dict['poisson_input'] and not self.net_dict['poisson_pool_input'])
-            self.poisson = network_input.create_network_input(self.net_dict, self.background_pool_size, self.K_ext, self.w_input)
+            self.poisson = network_input.create_network_input(self.net_dict, self.background_pool_size, self.K_ext, self.w_input, self.data_path)
         # else:
         #     assert(False), 'No input selected.'
 

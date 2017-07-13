@@ -32,6 +32,8 @@ warning is therefore issued. For details about deprecated functions, see
 documentation.
 '''
 
+import sys
+
 import time
 import numpy as np
 import network
@@ -40,9 +42,29 @@ from sim_params import sim_dict
 from stimulus_params import stim_dict
 
 
+if len(sys.argv) != 3:
+    print('Please provide background connectivity and seed as arguments. Exiting.')
+    exit(1)
+
+try:
+    background_connectivity = float(sys.argv[1])
+    if background_connectivity < 0. or background_connectivity > 1.:
+        raise ValueError()
+except ValueError:
+    print('Connectivity must be a float between 0 and 1. Exciting.')
+    exit(1)
+
+try:
+    seed = int(sys.argv[2])
+    if seed <= 0:
+        raise ValueError()
+except ValueError:
+    print('Seed must be a positive integer. Exciting.')
+
+
 # Initialize the network and pass parameters to it.
 tic = time.time()
-net = network.Network(sim_dict, net_dict, stim_dict)
+net = network.Network(sim_dict, net_dict, background_connectivity, seed, stim_dict)
 toc = time.time() - tic
 print("Time to initialize the network: %.2f s" % toc)
 # Connect all nodes.
@@ -60,8 +82,8 @@ print("Time to simulate: %.2f s" % toc)
 # before and 100 ms after the thalamic stimulus time are plotted here by
 # default. The computation of spike rates discards the first 500 ms of
 # the simulation to exclude initialization artifacts.
-raster_plot_time_idx = np.array(
-    [stim_dict['th_start'] - 100.0, stim_dict['th_start'] + 100.0]
-    )
-fire_rate_time_idx = np.array([500.0, sim_dict['t_sim']])
-net.evaluate(raster_plot_time_idx, fire_rate_time_idx)
+# raster_plot_time_idx = np.array(
+#     [stim_dict['th_start'] - 100.0, stim_dict['th_start'] + 100.0]
+#     )
+# fire_rate_time_idx = np.array([500.0, sim_dict['t_sim']])
+# net.evaluate(raster_plot_time_idx, fire_rate_time_idx)
